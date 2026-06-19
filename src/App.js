@@ -1,6 +1,21 @@
 import { useState, useEffect } from 'react';
 import './App.css';
 
+const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/12457099/43vpwme/';
+
+async function sendToZapier({ recordId, name, email, school, age, status, parentEmail }) {
+  try {
+    await fetch(ZAPIER_WEBHOOK_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ record_id: recordId, name, email, school, age, status, parentEmail }),
+    });
+    console.log('Submission sent', recordId);
+  } catch (err) {
+    console.log('Zapier send failed:', err);
+  }
+}
+
 // ─── STEPS ────────────────────────────────────────────────────────────────────
 // Step 1: info form  →  (if minor) Step 2: parent email  →  Step 3: upload placeholder
 
@@ -44,6 +59,7 @@ export default function App() {
     if (age >= 18) {
       // Adult path: mark usable, skip to upload
       setStatus('usable');
+      sendToZapier({ recordId, name: fields.name, email: fields.email, school: fields.school, age: fields.age, status: 'usable', parentEmail: '' });
       setStep(3);
     } else {
       // Minor path: mark pending_consent, collect parent email first
@@ -58,8 +74,7 @@ export default function App() {
     if (Object.keys(errs).length > 0) { setErrors(errs); return; }
 
     setErrors({});
-    // PHASE B PLACEHOLDER: trigger parental consent email here
-    // (send record_id + parentEmail to backend / Zapier webhook)
+    sendToZapier({ recordId, name: fields.name, email: fields.email, school: fields.school, age: fields.age, status: 'pending_consent', parentEmail });
     setStep(3);
   }
 
@@ -245,9 +260,7 @@ function StepUploadPlaceholder({ status, name, onBack }) {
         </div>
       </div>
 
-      {/* PHASE B PLACEHOLDER: on final submit, write a row to Google Sheets /
-          Kit.com with { record_id, name, email, school, age, status }.
-          Nothing is persisted in Phase A. */}
+      {/* Zapier webhook fired in handleInfoSubmit / handleParentSubmit on step transition. */}
 
       <div className="nav">
         <button className="btn btn--secondary" onClick={onBack}>Back</button>

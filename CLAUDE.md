@@ -55,3 +55,22 @@ Leave clearly-commented stubs for:
 - Video upload (Dropbox integration)
 - Parental consent email (via backend/Zapier)
 - External record creation (Google Sheets / Kit.com row write)
+
+## Current state
+
+**Built:**
+- Phase A form: name / email / school / age collection, client-side validation
+- `record_id` generated via `crypto.randomUUID()` on mount; stable across steps
+- Age branch: ≥18 → `status = "usable"`, <18 → parent email prompt → `status = "pending_consent"`
+- ffmpeg.wasm 1080p validation (client-side resolution check before upload)
+
+**Not built yet:**
+- Dropbox upload (Phase B stub exists in code)
+- Parental consent email send
+- Kit.com / Google Sheets row write on submission
+- `"expired"` status (set by scheduled backend job, not this form)
+
+**Next steps:**
+- Dropbox: set up app + obtain long-lived refresh token
+- Kit.com: survival-test the subscriber link flow end-to-end
+- Open question for boss: does Kit support transactional sending, or do we need a separate tool for consent emails?
