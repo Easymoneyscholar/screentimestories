@@ -35,9 +35,9 @@ Tracked in React state. Possible values:
    - **< 18** → `status = "pending_consent"` → prompt for parent/guardian email,
      then proceed to placeholder Upload step. (Consent runs in parallel with
      upload later — minors still reach the Upload step now.)
-3. Placeholder Upload step: labeled "Upload video (Phase B — not yet built)".
-   Minors see their `pending_consent` status displayed so the branch is
-   verifiable.
+3. Upload step: file picker with native browser validation (resolution + duration),
+   chunked Dropbox upload with progress bar. Minors see their `pending_consent`
+   status displayed.
 
 ## Tech constraints
 - create-react-app; React 19. Use only libraries in `package.json` plus React
@@ -62,15 +62,20 @@ Leave clearly-commented stubs for:
 - Phase A form: name / email / school / age collection, client-side validation
 - `record_id` generated via `crypto.randomUUID()` on mount; stable across steps
 - Age branch: ≥18 → `status = "usable"`, <18 → parent email prompt → `status = "pending_consent"`
-- ffmpeg.wasm 1080p validation (client-side resolution check before upload)
+- Native HTMLVideoElement validation (no ffmpeg/WASM): `Math.min(videoWidth, videoHeight) >= 1080`
+  (orientation-aware — passes both landscape 1920×1080 and portrait 1080×1920) and `duration <= 300s`
+  (5 min max, no minimum). Runs entirely in the browser before any upload.
+- Chunked Dropbox upload via `src/uploadToDropbox.js` (8 MB chunks, upload session API) with
+  progress bar; token minted server-side via `api/dropbox-token.js` (Vercel serverless function).
+  **Built but not yet live-tested** — requires `DROPBOX_REFRESH_TOKEN` set in Vercel env vars
+  before the first real upload can run.
 
 **Not built yet:**
-- Dropbox upload (Phase B stub exists in code)
 - Parental consent email send
 - Kit.com / Google Sheets row write on submission
 - `"expired"` status (set by scheduled backend job, not this form)
 
 **Next steps:**
-- Dropbox: set up app + obtain long-lived refresh token
+- Dropbox: add `DROPBOX_APP_KEY`, `DROPBOX_APP_SECRET`, `DROPBOX_REFRESH_TOKEN` to Vercel env vars, then live-test a real upload
 - Kit.com: survival-test the subscriber link flow end-to-end
 - Open question for boss: does Kit support transactional sending, or do we need a separate tool for consent emails?
