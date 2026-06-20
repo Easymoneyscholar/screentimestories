@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './App.css';
+import { uploadVideoToDropbox } from './uploadToDropbox';
 
 const ZAPIER_WEBHOOK_URL = 'https://hooks.zapier.com/hooks/catch/12457099/43vpwme/';
 
@@ -111,6 +112,7 @@ export default function App() {
         <StepUploadPlaceholder
           status={status}
           name={fields.name}
+          recordId={recordId}
           onBack={() => { setErrors({}); setStep(status === 'pending_consent' ? 2 : 1); }}
         />
       )}
@@ -227,14 +229,110 @@ function StepParentEmail({ parentEmail, onChange, errors, onBack, onSubmit }) {
   );
 }
 
-// ─── STEP 3: Upload placeholder ───────────────────────────────────────────────
-function StepUploadPlaceholder({ status, name, onBack }) {
+// ─── STEP 3: Video upload ─────────────────────────────────────────────────────
+function StepUploadPlaceholder({ status, name, recordId, onBack }) {
+  // All state here is local to this component only.
+  // Nothing below touches the App-level step machine, sendToZapier, or recordId creation.
+  const [file, setFile] = useState(null);
+  const [validationError, setValidationError] = useState(null);
+  const [isValid, setIsValid] = useState(false);
+  // uploadState drives the four visible states: idle → uploading → success | error
+  const [uploadState, setUploadState] = useState('idle');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState(null);
+
+  // Converts raw seconds to "M:SS" for the duration error message.
+  function formatDuration(secs) {
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  // Runs every time the student picks a file.
+  function handleFileChange(e) {
+    const picked = e.target.files[0];
+    if (!picked) return;
+
+    // Reset all upload/validation state so a previous pick never bleeds through.
+    setFile(picked);
+    setValidationError(null);
+    setIsValid(false);
+    setUploadState('idle');
+    setUploadError(null);
+    setUploadProgress(0);
+
+    // Validate using a hidden, off-screen video element.
+    // This reads metadata (resolution, duration) entirely in the browser —
+    // nothing is sent to any server at this point.
+    const url = URL.createObjectURL(picked);
+    const video = document.createElement('video');
+    video.preload = 'metadata';
+
+    video.addEventListener('loadedmetadata', () => {
+      // Release the temporary URL as soon as we've read what we need.
+      URL.revokeObjectURL(url);
+
+      const { videoWidth, videoHeight, duration } = video;
+
+      // Orientation-aware resolution check: Math.min handles both landscape
+      // (1920×1080) and vertical phone video (1080×1920).
+      if (Math.min(videoWidth, videoHeight) < 1080) {
+        setValidationError(
+          `Video must be at least 1080p — yours is ${videoWidth}×${videoHeight}`
+        );
+        return;
+      }
+
+      // Duration check: 5 minutes maximum, no minimum.
+      if (duration > 300) {
+        setValidationError(
+          `Video must be 5 minutes or shorter — yours is ${formatDuration(duration)}`
+        );
+        return;
+      }
+
+      // Both checks passed — enable the upload button.
+      setIsValid(true);
+    });
+
+    video.addEventListener('error', () => {
+      URL.revokeObjectURL(url);
+      setValidationError('Could not read this video file. Please try a different file.');
+    });
+
+    video.src = url;
+  }
+
+  // Called when the student clicks "Upload video".
+  async function handleUpload() {
+    if (!file || !isValid || uploadState === 'uploading') return;
+
+    setUploadState('uploading');
+    setUploadProgress(0);
+    setUploadError(null);
+
+    try {
+      // Calls our audited upload module. Chunks the file, mints a token from
+      // /api/dropbox-token, and streams to Dropbox. onProgress fires 0→100.
+      await uploadVideoToDropbox(file, recordId, (percent) => {
+        setUploadProgress(percent);
+      });
+      setUploadState('success');
+    } catch (err) {
+      setUploadState('error');
+      setUploadError(err.message);
+    }
+  }
+
+  const uploading = uploadState === 'uploading';
+  const succeeded = uploadState === 'success';
+
   return (
     <div>
       <div className="card">
-        <p className="card__title">Your submission</p>
+        <p className="card__title">Upload your video</p>
 
-        {/* Status visible here so the age branch can be confirmed in the UI */}
+        {/* Status badge — unchanged from placeholder */}
         <p style={{ fontSize: 14, marginBottom: 16 }}>
           Status:{' '}
           <span className={`status-badge status-badge--${status === 'usable' ? 'usable' : 'pending'}`}>
@@ -249,21 +347,93 @@ function StepUploadPlaceholder({ status, name, onBack }) {
           </div>
         )}
 
-        <div className="placeholder-box">
-          <strong>Upload video (Phase B — not yet built)</strong>
-          {/* PHASE B PLACEHOLDER: wire Dropbox Chooser / upload here.
-              Pass record_id as the file metadata key so Dropbox rows
-              can be joined back to this submission. */}
-          This is where the video uploader will appear.
-          <br />
-          <span style={{ fontSize: 13 }}>record_id is logged to the console.</span>
-        </div>
+        {/* ── STATE: idle / validating / validation error ── */}
+        {/* File picker is hidden after a successful upload (can't re-upload). */}
+        {!succeeded && (
+          <div className="field">
+            <label className="field__label field__label--required" htmlFor="videoFile">
+              Video file
+            </label>
+            <input
+              id="videoFile"
+              className="field__input"
+              type="file"
+              accept="video/*"
+              disabled={uploading}
+              onChange={handleFileChange}
+            />
+
+            {/* Shown briefly while the browser reads the video's metadata. */}
+            {file && !isValid && !validationError && (
+              <p style={{ fontSize: 13, color: '#666', marginTop: 6 }}>Checking video…</p>
+            )}
+
+            {/* Shown when resolution or duration check fails. */}
+            {validationError && (
+              <p className="field__error">{validationError}</p>
+            )}
+
+            {/* Shown when all checks pass. */}
+            {isValid && (
+              <p style={{ fontSize: 13, color: '#16a34a', marginTop: 6 }}>✓ Video looks good.</p>
+            )}
+          </div>
+        )}
+
+        {/* ── STATE: uploading — progress bar ── */}
+        {uploading && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 14, marginBottom: 6 }}>Uploading… {uploadProgress}%</p>
+            <div style={{ background: '#e5e7eb', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+              <div
+                style={{
+                  background: '#3b82f6',
+                  height: '100%',
+                  width: `${uploadProgress}%`,
+                  transition: 'width 0.25s ease',
+                }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* ── STATE: success ── */}
+        {succeeded && (
+          <div className="notice notice--info">
+            <strong>Upload complete.</strong> Your video has been received.
+            {status === 'pending_consent' && (
+              <> We'll send a consent request to the email you provided.</>
+            )}
+          </div>
+        )}
+
+        {/* ── STATE: error — show message, allow retry ── */}
+        {uploadState === 'error' && uploadError && (
+          <div className="notice notice--warning" style={{ marginTop: 12 }}>
+            Upload failed: {uploadError}
+          </div>
+        )}
+
+        {/* Upload button — hidden after success to prevent double-submit. */}
+        {!succeeded && (
+          <button
+            className="btn btn--primary"
+            style={{ marginTop: 12 }}
+            onClick={handleUpload}
+            disabled={!isValid || uploading}
+          >
+            {uploading ? 'Uploading…' : 'Upload video'}
+          </button>
+        )}
       </div>
 
-      {/* Zapier webhook fired in handleInfoSubmit / handleParentSubmit on step transition. */}
+      {/* Zapier webhook already fired in handleInfoSubmit / handleParentSubmit — not called here. */}
 
       <div className="nav">
-        <button className="btn btn--secondary" onClick={onBack}>Back</button>
+        {/* Disabled during upload to avoid navigating away mid-transfer. */}
+        <button className="btn btn--secondary" onClick={onBack} disabled={uploading}>
+          Back
+        </button>
       </div>
     </div>
   );
