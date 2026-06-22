@@ -8,7 +8,7 @@ async function sendToZapier({ recordId, name, email, school, age, status, parent
   try {
     await fetch(ZAPIER_WEBHOOK_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'text/plain' },
       body: JSON.stringify({ record_id: recordId, name, email, school, age, status, parentEmail }),
     });
     console.log('Submission sent', recordId);
