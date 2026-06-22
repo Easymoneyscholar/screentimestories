@@ -236,6 +236,9 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
   const [file, setFile] = useState(null);
   const [validationError, setValidationError] = useState(null);
   const [isValid, setIsValid] = useState(false);
+  // Stores the video's width, height, and duration after validation passes,
+  // so we can display them in the file confirmation line.
+  const [videoMeta, setVideoMeta] = useState(null);
   // uploadState drives the four visible states: idle → uploading → success | error
   const [uploadState, setUploadState] = useState('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
@@ -257,6 +260,7 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
     setFile(picked);
     setValidationError(null);
     setIsValid(false);
+    setVideoMeta(null);
     setUploadState('idle');
     setUploadError(null);
     setUploadProgress(0);
@@ -291,8 +295,10 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
         return;
       }
 
-      // Both checks passed — enable the upload button.
+      // Both checks passed — enable the upload button and store metadata
+      // so the file confirmation line can display resolution and duration.
       setIsValid(true);
+      setVideoMeta({ width: videoWidth, height: videoHeight, duration });
     });
 
     video.addEventListener('error', () => {
@@ -373,9 +379,13 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
               <p className="field__error">{validationError}</p>
             )}
 
-            {/* Shown when all checks pass. */}
-            {isValid && (
-              <p style={{ fontSize: 13, color: '#16a34a', marginTop: 6 }}>✓ Video looks good.</p>
+            {/* Shown when all checks pass — file name, size in MB, resolution, duration. */}
+            {isValid && videoMeta && (
+              <p style={{ fontSize: 13, color: '#16a34a', marginTop: 6 }}>
+                ✓ {file.name} · {(file.size / (1024 * 1024)).toFixed(1)} MB
+                {' · '}{Math.min(videoMeta.width, videoMeta.height)}p
+                {' · '}{formatDuration(videoMeta.duration)}
+              </p>
             )}
           </div>
         )}
@@ -383,14 +393,22 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
         {/* ── STATE: uploading — progress bar ── */}
         {uploading && (
           <div style={{ marginBottom: 16 }}>
-            <p style={{ fontSize: 14, marginBottom: 6 }}>Uploading… {uploadProgress}%</p>
-            <div style={{ background: '#e5e7eb', borderRadius: 4, height: 8, overflow: 'hidden' }}>
+            <p style={{ fontSize: 14, fontWeight: 600, marginBottom: 8 }}>
+              Uploading… {uploadProgress}%
+            </p>
+            {/* Light grey track so the bar looks real even at 0% */}
+            <div style={{ background: '#e5e7eb', borderRadius: 4, height: 10, overflow: 'hidden' }}>
+              {/* Coloured fill — glides smoothly between percentages via CSS transition */}
               <div
+                role="progressbar"
+                aria-valuenow={uploadProgress}
+                aria-valuemin="0"
+                aria-valuemax="100"
                 style={{
                   background: '#3b82f6',
                   height: '100%',
                   width: `${uploadProgress}%`,
-                  transition: 'width 0.25s ease',
+                  transition: 'width 0.3s ease',
                 }}
               />
             </div>
@@ -399,10 +417,28 @@ function StepUploadPlaceholder({ status, name, recordId, onBack }) {
 
         {/* ── STATE: success ── */}
         {succeeded && (
-          <div className="notice notice--info">
-            <strong>Upload complete.</strong> Your video has been received.
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            {/* Inline SVG checkmark — no image files or packages required */}
+            <svg width="56" height="56" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+              <circle cx="28" cy="28" r="28" fill="#dcfce7" />
+              <path
+                d="M16 28l9 9 15-15"
+                stroke="#16a34a"
+                strokeWidth="3"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            <p style={{ fontSize: 22, fontWeight: 700, color: '#111', margin: '12px 0 6px' }}>
+              Video received
+            </p>
+            <p style={{ fontSize: 15, color: '#444' }}>
+              Thanks, {name} — your submission is in.
+            </p>
             {status === 'pending_consent' && (
-              <> We'll send a consent request to the email you provided.</>
+              <p style={{ fontSize: 14, color: '#666', marginTop: 8 }}>
+                We'll send a consent request to the email you provided.
+              </p>
             )}
           </div>
         )}
